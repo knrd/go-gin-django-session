@@ -14,7 +14,7 @@ This example demonstrates how to use `go-gin-django-session` to authenticate use
 
 ```bash
 go mod init myapp
-go get github.com/knrd/go-gin-django-session@v0.1.0
+go get github.com/knrd/go-gin-django-session@v0.1.1
 go get github.com/gin-gonic/gin
 go get github.com/lib/pq
 ```
