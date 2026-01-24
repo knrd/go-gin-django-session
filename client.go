@@ -74,7 +74,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 // GetRawSession retrieves and validates a Django session by session key
 // WITHOUT decoding the payload. This is fast and used by middleware.
 func (c *Client) GetRawSession(ctx context.Context, sessionKey string) (*RawSession, error) {
-	if sessionKey == "" {
+	if sessionKey == "" || len(sessionKey) > 255 {
 		return nil, ErrSessionNotFound
 	}
 

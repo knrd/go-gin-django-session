@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,6 +255,27 @@ func TestGetRawSession(t *testing.T) {
 
 	// Test with empty session key
 	_, err = client.GetRawSession(ctx, "")
+	if err == nil {
+		t.Errorf("GetRawSession() expected error for empty session key")
+	}
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("GetRawSession() error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestGetRawSessionKeyTooLong(t *testing.T) {
+	ctx := context.Background()
+
+	client, err := NewClient(ClientConfig{
+		DB:        &sql.DB{},
+		SecretKey: "test-secret",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Test with empty session key
+	_, err = client.GetRawSession(ctx, strings.Repeat("1", 256))
 	if err == nil {
 		t.Errorf("GetRawSession() expected error for empty session key")
 	}
