@@ -1,14 +1,14 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"log"
 	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	djsession "github.com/knrd/go-gin-django-session"
-	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -25,14 +25,9 @@ func main() {
 	}
 
 	// Connect to Django's PostgreSQL database
-	connStr := "host=" + dbHost +
-		" port=" + dbPort +
-		" user=" + dbUser +
-		" password=" + dbPassword +
-		" dbname=" + dbName +
-		" sslmode=disable"
+	connStr := "postgres://" + dbUser + ":" + dbPassword + "@" + dbHost + ":" + dbPort + "/" + dbName + "?sslmode=disable"
 
-	db, err := sql.Open("postgres", connStr)
+	db, err := pgxpool.New(context.Background(), connStr)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}

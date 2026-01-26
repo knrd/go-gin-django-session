@@ -18,7 +18,8 @@ A Go library for integrating Django session authentication with Gin web applicat
 
 - **Go** 1.21 or higher
 - **Django** backend with database sessions
-- **PostgreSQL** database (or any database compatible with `database/sql`)
+- **PostgreSQL** database
+- **pgx/v5** driver (compatibility with `database/sql` is NOT supported)
 - **Gin** web framework v1.9.1+
 
 ## Installation
@@ -35,18 +36,18 @@ go get github.com/knrd/go-gin-django-session@v0.1.1
 package main
 
 import (
-    "database/sql"
+    "context"
     "log"
+    "os"
     
     "github.com/gin-gonic/gin"
-    _ "github.com/lib/pq"
+    "github.com/jackc/pgx/v5/pgxpool"
     djsession "github.com/knrd/go-gin-django-session"
 )
 
 func main() {
     // Connect to Django's PostgreSQL database
-    db, err := sql.Open("postgres", 
-        "host=localhost port=5432 user=django password=secret dbname=djangodb sslmode=disable")
+    db, err := pgxpool.New(context.Background(), "postgres://django:secret@localhost:5432/djangodb")
     if err != nil {
         log.Fatal(err)
     }
@@ -128,7 +129,7 @@ authMiddleware := djsession.AuthMiddleware(djsession.MiddlewareConfig{
 Creates a new Django session client.
 
 **Parameters:**
-- `DB` (*sql.DB) - Database connection (required)
+- `DB` (DBTX) - Database connection (required) - Compatible with `*pgxpool.Pool`
 - `SecretKey` (string) - Django SECRET_KEY (required)
 - `SessionCookieName` (string) - Session cookie name (default: "sessionid")
 - `MaxAge` (time.Duration) - Maximum session age for validation (optional)
@@ -218,7 +219,7 @@ See the [`examples/`](examples/) directory for more usage examples:
 - ⚠️ **Never expose SECRET_KEY** - Use environment variables
 - ⚠️ **Use HTTPS in production** - Set `SESSION_COOKIE_SECURE = True` in Django
 - ⚠️ **Validate session age** - Consider setting `MaxAge` in ClientConfig
-- ⚠️ **Database connection pooling** - Configure `sql.DB` with appropriate pool settings
+- ⚠️ **Database connection pooling** - Configure `pgxpool` with appropriate pool settings
 
 ## License
 

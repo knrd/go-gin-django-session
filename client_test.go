@@ -2,14 +2,50 @@ package django_session
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/mock"
 )
+
+// MockDBTX is a mock implementation of DBTX
+type MockDBTX struct {
+	mock.Mock
+}
+
+func (m *MockDBTX) Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error) {
+	args := m.Called(ctx, sql, arguments)
+	return args.Get(0).(pgconn.CommandTag), args.Error(1)
+}
+
+func (m *MockDBTX) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	calledArgs := m.Called(ctx, sql, args)
+	return calledArgs.Get(0).(pgx.Rows), calledArgs.Error(1)
+}
+
+func (m *MockDBTX) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	calledArgs := m.Called(ctx, sql, args)
+	return calledArgs.Get(0).(pgx.Row)
+}
+
+func (m *MockDBTX) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
+	args := m.Called(ctx, tableName, columnNames, rowSrc)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// MockRow is a mock implementation of pgx.Row
+type MockRow struct {
+	mock.Mock
+}
+
+func (m *MockRow) Scan(dest ...interface{}) error {
+	args := m.Called(dest...)
+	return args.Error(0)
+}
 
 // TestNewClient tests the Client constructor
 func TestNewClient(t *testing.T) {
@@ -22,7 +58,7 @@ func TestNewClient(t *testing.T) {
 		{
 			name: "valid config",
 			config: ClientConfig{
-				DB:        &sql.DB{},
+				DB:        &MockDBTX{},
 				SecretKey: "test-secret-key",
 			},
 			wantErr: false,
@@ -38,7 +74,7 @@ func TestNewClient(t *testing.T) {
 		{
 			name: "missing secret key",
 			config: ClientConfig{
-				DB: &sql.DB{},
+				DB: &MockDBTX{},
 			},
 			wantErr: true,
 			errMsg:  "secret key is required",
@@ -46,7 +82,7 @@ func TestNewClient(t *testing.T) {
 		{
 			name: "custom cookie name",
 			config: ClientConfig{
-				DB:                &sql.DB{},
+				DB:                &MockDBTX{},
 				SecretKey:         "test-secret-key",
 				SessionCookieName: "custom_sessionid",
 			},
@@ -105,7 +141,7 @@ func TestClientDecodeSessionData(t *testing.T) {
 
 	// Create client
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: secretKey,
 	})
 	if err != nil {
@@ -177,7 +213,7 @@ func TestClientDecodeSessionDataWithMaxAge(t *testing.T) {
 			}
 
 			client, err := NewClient(ClientConfig{
-				DB:        &sql.DB{},
+				DB:        &MockDBTX{},
 				SecretKey: secretKey,
 				MaxAge:    tt.maxAge,
 			})
@@ -246,7 +282,7 @@ func TestGetRawSession(t *testing.T) {
 	ctx := context.Background()
 
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: "test-secret",
 	})
 	if err != nil {
@@ -267,17 +303,17 @@ func TestGetRawSessionKeyTooLong(t *testing.T) {
 	ctx := context.Background()
 
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: "test-secret",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	// Test with empty session key
+	// Test with session key too long
 	_, err = client.GetRawSession(ctx, strings.Repeat("1", 256))
 	if err == nil {
-		t.Errorf("GetRawSession() expected error for empty session key")
+		t.Errorf("GetRawSession() expected error for too long session key")
 	}
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Errorf("GetRawSession() error = %v, want ErrSessionNotFound", err)
@@ -295,7 +331,7 @@ func TestDecodeSessionUserID(t *testing.T) {
 	}
 
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: secretKey,
 	})
 	if err != nil {
@@ -317,7 +353,7 @@ func TestDecodeSessionUserID(t *testing.T) {
 // TestDecodeSessionUserIDWithInvalidData tests error handling
 func TestDecodeSessionUserIDWithInvalidData(t *testing.T) {
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: "test-secret",
 	})
 	if err != nil {

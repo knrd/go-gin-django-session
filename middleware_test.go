@@ -1,7 +1,6 @@
 package django_session
 
 import (
-	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,17 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// mockDB is a minimal mock for testing that doesn't require a real database
-type mockDB struct {
-	*sql.DB
-}
-
 func TestAuthMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	// Create a test client (won't actually connect to DB in these tests)
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: "test-secret-key",
 	})
 	if err != nil {
@@ -28,12 +22,12 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		setupRequest       func(*http.Request)
-		expectedStatus     int
-		expectedRedirect   string
-		shouldCallNext     bool
-		contextShouldHave  string
+		name              string
+		setupRequest      func(*http.Request)
+		expectedStatus    int
+		expectedRedirect  string
+		shouldCallNext    bool
+		contextShouldHave string
 	}{
 		{
 			name: "no session cookie",
@@ -62,7 +56,7 @@ func TestAuthMiddleware(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create test router
 			router := gin.New()
-			
+
 			nextCalled := false
 			router.Use(AuthMiddleware(MiddlewareConfig{
 				Client: client,
@@ -105,7 +99,7 @@ func TestAuthMiddlewareWithCustomConfig(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: "test-secret-key",
 	})
 	if err != nil {
@@ -139,7 +133,7 @@ func TestAuthMiddlewareWithCustomConfig(t *testing.T) {
 	t.Run("custom session key", func(t *testing.T) {
 		router := gin.New()
 		customSessionKey := "my_custom_session"
-		
+
 		router.Use(AuthMiddleware(MiddlewareConfig{
 			Client:     client,
 			SessionKey: customSessionKey,
@@ -201,7 +195,7 @@ func TestAuthMiddlewareBackwardCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: "test-secret-key",
 	})
 	if err != nil {
@@ -238,11 +232,11 @@ func TestAuthMiddlewareWithMockSession(t *testing.T) {
 
 	// This test demonstrates the expected flow when a valid session exists
 	// In a real scenario, you'd need to mock the database or use a test database
-	
+
 	t.Run("context storage", func(t *testing.T) {
 		// Create a custom middleware that simulates what AuthMiddleware should do
 		router := gin.New()
-		
+
 		// Simulate successful session validation
 		router.Use(func(c *gin.Context) {
 			// Simulate what AuthMiddleware does when session is valid
@@ -254,23 +248,23 @@ func TestAuthMiddlewareWithMockSession(t *testing.T) {
 			c.Set("django_session", mockSession)
 			c.Next()
 		})
-		
+
 		router.GET("/test", func(c *gin.Context) {
 			// Verify session is in context
 			sessionValue, exists := c.Get("django_session")
 			if !exists {
 				t.Error("Expected session in context")
 			}
-			
+
 			rawSession, ok := sessionValue.(*RawSession)
 			if !ok {
 				t.Errorf("Expected *RawSession, got %T", sessionValue)
 			}
-			
+
 			if rawSession.SessionKey != "test-session-key" {
 				t.Errorf("Expected session key 'test-session-key', got %s", rawSession.SessionKey)
 			}
-			
+
 			c.Status(http.StatusOK)
 		})
 
@@ -289,7 +283,7 @@ func TestMiddlewareConfigDefaults(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	client, err := NewClient(ClientConfig{
-		DB:        &sql.DB{},
+		DB:        &MockDBTX{},
 		SecretKey: "test-secret-key",
 	})
 	if err != nil {
@@ -326,9 +320,9 @@ func TestAuthMiddlewareErrorHandling(t *testing.T) {
 	t.Run("error handler receives error on missing cookie", func(t *testing.T) {
 		var capturedError error
 		errorHandlerCalled := false
-		
+
 		client, _ := NewClient(ClientConfig{
-			DB:        &sql.DB{},
+			DB:        &MockDBTX{},
 			SecretKey: "test-secret-key",
 		})
 
@@ -348,7 +342,7 @@ func TestAuthMiddlewareErrorHandling(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/test", nil)
 		// No cookie set
-		
+
 		router.ServeHTTP(w, req)
 
 		if !errorHandlerCalled {
@@ -392,9 +386,9 @@ func TestAuthMiddlewareErrorHandling(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				var capturedError error
-				
+
 				client, _ := NewClient(ClientConfig{
-					DB:        &sql.DB{},
+					DB:        &MockDBTX{},
 					SecretKey: "test-secret-key",
 				})
 
@@ -413,7 +407,7 @@ func TestAuthMiddlewareErrorHandling(t *testing.T) {
 				w := httptest.NewRecorder()
 				req, _ := http.NewRequest("GET", "/test", nil)
 				tt.setupRequest(req)
-				
+
 				router.ServeHTTP(w, req)
 
 				if capturedError == nil {
@@ -432,7 +426,7 @@ func TestAuthMiddlewareErrorHandling(t *testing.T) {
 func TestSessionCookieName(t *testing.T) {
 	customCookieName := "custom_session"
 	client, err := NewClient(ClientConfig{
-		DB:                &sql.DB{},
+		DB:                &MockDBTX{},
 		SecretKey:         "test-secret-key",
 		SessionCookieName: customCookieName,
 	})
@@ -452,7 +446,7 @@ func TestAuthMiddlewareContextKeys(t *testing.T) {
 	t.Run("default session key", func(t *testing.T) {
 		// Simulate middleware behavior with mocked successful session
 		router := gin.New()
-		
+
 		router.Use(func(c *gin.Context) {
 			// Simulate what AuthMiddleware does - store with default key
 			mockSession := &RawSession{
@@ -463,18 +457,18 @@ func TestAuthMiddlewareContextKeys(t *testing.T) {
 			c.Set("django_session", mockSession)
 			c.Next()
 		})
-		
+
 		router.GET("/test", func(c *gin.Context) {
 			sessionValue, exists := c.Get("django_session")
 			if !exists {
 				t.Error("Expected django_session key in context")
 			}
-			
+
 			_, ok := sessionValue.(*RawSession)
 			if !ok {
 				t.Errorf("Expected *RawSession type, got %T", sessionValue)
 			}
-			
+
 			c.Status(http.StatusOK)
 		})
 
@@ -489,9 +483,9 @@ func TestAuthMiddlewareContextKeys(t *testing.T) {
 
 	t.Run("custom session key", func(t *testing.T) {
 		customKey := "my_session"
-		
+
 		router := gin.New()
-		
+
 		router.Use(func(c *gin.Context) {
 			// Simulate middleware with custom key
 			mockSession := &RawSession{
@@ -502,18 +496,18 @@ func TestAuthMiddlewareContextKeys(t *testing.T) {
 			c.Set(customKey, mockSession)
 			c.Next()
 		})
-		
+
 		router.GET("/test", func(c *gin.Context) {
 			sessionValue, exists := c.Get(customKey)
 			if !exists {
 				t.Errorf("Expected %s key in context", customKey)
 			}
-			
+
 			_, ok := sessionValue.(*RawSession)
 			if !ok {
 				t.Errorf("Expected *RawSession type, got %T", sessionValue)
 			}
-			
+
 			c.Status(http.StatusOK)
 		})
 

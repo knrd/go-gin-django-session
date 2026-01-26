@@ -2,10 +2,12 @@ package django_session
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var (
@@ -19,6 +21,14 @@ var (
 	ErrUserNotFound = errors.New("user not found")
 )
 
+// DBTX is an interface compatible with *pgx.Conn, *pgxpool.Pool and the sqlc generated interfaces.
+type DBTX interface {
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+	CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error)
+}
+
 // RawSession represents a Django session without decoded payload (fast)
 type RawSession struct {
 	SessionKey  string
@@ -28,7 +38,7 @@ type RawSession struct {
 
 // ClientConfig holds configuration for the Django session client
 type ClientConfig struct {
-	DB                *sql.DB
+	DB                DBTX
 	SecretKey         string
 	SessionCookieName string
 	MaxAge            time.Duration // Optional: max age for session validation
@@ -36,7 +46,7 @@ type ClientConfig struct {
 
 // Client provides methods to interact with Django sessions
 type Client struct {
-	db                *sql.DB
+	db                DBTX
 	secretKey         string
 	sessionCookieName string
 	maxAge            time.Duration
@@ -83,14 +93,14 @@ func (c *Client) GetRawSession(ctx context.Context, sessionKey string) (*RawSess
 	          FROM django_session 
 	          WHERE session_key = $1`
 
-	err := c.db.QueryRowContext(ctx, query, sessionKey).Scan(
+	err := c.db.QueryRow(ctx, query, sessionKey).Scan(
 		&session.SessionKey,
 		&session.SessionData,
 		&session.ExpireDate,
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSessionNotFound
 		}
 		return nil, fmt.Errorf("database query failed: %w", err)
