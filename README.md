@@ -233,10 +233,6 @@ Contributions are welcome! Please open an issue or submit a pull request.
 
 For issues, questions, or suggestions, please open an issue on GitHub.
 
-## Version
-
-Current version: **v0.1.1**
-
 ---
 
 **Developed with assistance from Claude AI** 🤖
