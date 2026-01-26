@@ -15,8 +15,6 @@ This example demonstrates how to use `go-gin-django-session` to authenticate use
 ```bash
 go mod init myapp
 go get github.com/knrd/go-gin-django-session@v1.0.1
-go get github.com/gin-gonic/gin
-go get github.com/lib/pq
 ```
 
 2. Set environment variables:
