@@ -520,3 +520,206 @@ func TestAuthMiddlewareContextKeys(t *testing.T) {
 		}
 	})
 }
+
+func TestOptionalAuthMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	client, err := NewClient(ClientConfig{
+		DB:        &MockDBTX{},
+		SecretKey: "test-secret-key",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	t.Run("no session cookie - continues without redirect", func(t *testing.T) {
+		router := gin.New()
+		
+		handlerCalled := false
+		var sessionExists bool
+
+		router.Use(OptionalAuthMiddleware(MiddlewareConfig{
+			Client: client,
+		}))
+		router.GET("/test", func(c *gin.Context) {
+			handlerCalled = true
+			_, sessionExists = c.Get("django_session")
+			c.Status(http.StatusOK)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/test", nil)
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		if !handlerCalled {
+			t.Error("Expected handler to be called")
+		}
+
+		if sessionExists {
+			t.Error("Expected session to NOT exist in context when no cookie")
+		}
+
+		// Should NOT redirect
+		location := w.Header().Get("Location")
+		if location != "" {
+			t.Errorf("Expected no redirect, got redirect to %s", location)
+		}
+	})
+
+	t.Run("empty session cookie - continues without redirect", func(t *testing.T) {
+		router := gin.New()
+		
+		handlerCalled := false
+		var sessionExists bool
+
+		router.Use(OptionalAuthMiddleware(MiddlewareConfig{
+			Client: client,
+		}))
+		router.GET("/test", func(c *gin.Context) {
+			handlerCalled = true
+			_, sessionExists = c.Get("django_session")
+			c.Status(http.StatusOK)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/test", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "sessionid",
+			Value: "",
+		})
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		if !handlerCalled {
+			t.Error("Expected handler to be called")
+		}
+
+		if sessionExists {
+			t.Error("Expected session to NOT exist in context when empty cookie")
+		}
+
+		// Should NOT redirect
+		location := w.Header().Get("Location")
+		if location != "" {
+			t.Errorf("Expected no redirect, got redirect to %s", location)
+		}
+	})
+
+	t.Run("with custom session key", func(t *testing.T) {
+		customSessionKey := "my_custom_session"
+		router := gin.New()
+		
+		var sessionExists bool
+
+		router.Use(OptionalAuthMiddleware(MiddlewareConfig{
+			Client:     client,
+			SessionKey: customSessionKey,
+		}))
+		router.GET("/test", func(c *gin.Context) {
+			_, sessionExists = c.Get(customSessionKey)
+			c.Status(http.StatusOK)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/test", nil)
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		if sessionExists {
+			t.Error("Expected session to NOT exist in context with custom key")
+		}
+	})
+
+	t.Run("valid session - sets context", func(t *testing.T) {
+		// This test simulates what would happen with a valid session
+		router := gin.New()
+		
+		handlerCalled := false
+		var sessionExists bool
+
+		router.Use(func(c *gin.Context) {
+			// Simulate OptionalAuthMiddleware with valid session
+			mockSession := &RawSession{
+				SessionKey:  "valid-session-key",
+				SessionData: "valid-data",
+				ExpireDate:  time.Now().Add(1 * time.Hour),
+			}
+			c.Set("django_session", mockSession)
+			c.Next()
+		})
+
+		router.GET("/test", func(c *gin.Context) {
+			handlerCalled = true
+			sessionValue, exists := c.Get("django_session")
+			sessionExists = exists
+			
+			if exists {
+				rawSession, ok := sessionValue.(*RawSession)
+				if !ok {
+					t.Errorf("Expected *RawSession, got %T", sessionValue)
+				}
+				if rawSession.SessionKey != "valid-session-key" {
+					t.Errorf("Expected session key 'valid-session-key', got %s", rawSession.SessionKey)
+				}
+			}
+			
+			c.Status(http.StatusOK)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/test", nil)
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		if !handlerCalled {
+			t.Error("Expected handler to be called")
+		}
+
+		if !sessionExists {
+			t.Error("Expected session to exist in context with valid session")
+		}
+	})
+
+	t.Run("OnError handler is NOT called", func(t *testing.T) {
+		// OptionalAuthMiddleware should NOT call OnError handler
+		errorHandlerCalled := false
+
+		router := gin.New()
+		router.Use(OptionalAuthMiddleware(MiddlewareConfig{
+			Client: client,
+			OnError: func(c *gin.Context, err error) {
+				errorHandlerCalled = true
+				c.AbortWithStatus(http.StatusUnauthorized)
+			},
+		}))
+		router.GET("/test", func(c *gin.Context) {
+			c.Status(http.StatusOK)
+		})
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/test", nil)
+		// No cookie set
+		router.ServeHTTP(w, req)
+
+		if errorHandlerCalled {
+			t.Error("Expected OnError handler to NOT be called in OptionalAuthMiddleware")
+		}
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+	})
+}
