@@ -25,7 +25,7 @@ A Go library for integrating Django session authentication with Gin web applicat
 ## Installation
 
 ```bash
-go get github.com/knrd/go-gin-django-session@v1.0.1
+go get github.com/knrd/go-gin-django-session@v1.1.0
 ```
 
 ## Quick Start
