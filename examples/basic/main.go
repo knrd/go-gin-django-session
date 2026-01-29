@@ -55,6 +55,7 @@ func main() {
 			"message": "Welcome! This is a public endpoint.",
 			"endpoints": gin.H{
 				"public":    "/",
+				"mixed":     "/home",
 				"protected": "/api/dashboard",
 				"user":      "/api/user",
 			},
@@ -64,6 +65,40 @@ func main() {
 	// Health check endpoint
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "healthy"})
+	})
+
+	// Mixed authentication endpoint - works for both logged in and anonymous users
+	r.GET("/home", djsession.OptionalAuthMiddleware(djsession.MiddlewareConfig{
+		Client:     client,
+		SessionKey: "django_session",
+	}), func(c *gin.Context) {
+		// Check if user is authenticated
+		rawSession, exists := c.Get("django_session")
+
+		if exists {
+			// User is logged in - show personalized content
+			session := rawSession.(*djsession.RawSession)
+			userID, err := client.DecodeSessionUserID(session.SessionData)
+			if err != nil {
+				log.Printf("Failed to decode session: %v", err)
+				c.JSON(400, gin.H{"error": "Failed to decode session"})
+				return
+			}
+
+			c.JSON(200, gin.H{
+				"message":         "Welcome back!",
+				"user_id":         userID,
+				"authenticated":   true,
+				"session_expires": session.ExpireDate,
+			})
+		} else {
+			// Anonymous user - show generic content
+			c.JSON(200, gin.H{
+				"message":       "Welcome, guest! Please log in to access more features.",
+				"authenticated": false,
+				"login_url":     "/account/login",
+			})
+		}
 	})
 
 	// Protected routes - require Django session authentication
@@ -156,6 +191,7 @@ func main() {
 	port := getEnv("PORT", "8080")
 	log.Printf("🚀 Server starting on port %s", port)
 	log.Printf("📝 Public endpoint: http://localhost:%s/", port)
+	log.Printf("🏠 Mixed auth endpoint: http://localhost:%s/home", port)
 	log.Printf("🔒 Protected endpoint: http://localhost:%s/api/dashboard", port)
 
 	if err := r.Run(":" + port); err != nil {

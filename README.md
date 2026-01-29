@@ -25,7 +25,7 @@ A Go library for integrating Django session authentication with Gin web applicat
 ## Installation
 
 ```bash
-go get github.com/knrd/go-gin-django-session@v1.1.0
+go get github.com/knrd/go-gin-django-session@v1.1.1
 ```
 
 ## Quick Start
@@ -120,6 +120,37 @@ authMiddleware := djsession.AuthMiddleware(djsession.MiddlewareConfig{
 })
 ```
 
+### 4. Optional Authentication (for mixed public/private views)
+
+Use `OptionalAuthMiddleware` for routes that should work for both authenticated and anonymous users:
+
+```go
+// Routes accessible to everyone (logged in or not)
+r.GET("/home", djsession.OptionalAuthMiddleware(djsession.MiddlewareConfig{
+    Client: client,
+}), func(c *gin.Context) {
+    // Check if user is authenticated
+    rawSession, exists := c.Get("django_session")
+    
+    if exists {
+        // User is logged in
+        session := rawSession.(*djsession.RawSession)
+        userID, _ := client.DecodeSessionUserID(session.SessionData)
+        c.JSON(200, gin.H{
+            "message": "Welcome back!",
+            "user_id": userID,
+            "authenticated": true,
+        })
+    } else {
+        // Anonymous user
+        c.JSON(200, gin.H{
+            "message": "Welcome, guest!",
+            "authenticated": false,
+        })
+    }
+})
+```
+
 ## API Reference
 
 ### Client
@@ -154,7 +185,7 @@ Decodes session payload and extracts the authenticated user ID.
 
 #### `AuthMiddleware(config MiddlewareConfig) gin.HandlerFunc`
 
-Gin middleware for Django session authentication.
+Gin middleware for Django session authentication. Requires valid session.
 
 **Parameters:**
 - `Client` (*Client) - Django session client (required)
@@ -166,6 +197,24 @@ Gin middleware for Django session authentication.
 - Validates session exists and is not expired
 - Stores `RawSession` in Gin context (payload not decoded)
 - Redirects or calls OnError on authentication failure
+- **Aborts request** if session is invalid
+
+#### `OptionalAuthMiddleware(config MiddlewareConfig) gin.HandlerFunc`
+
+Gin middleware for optional Django session authentication. Works for both authenticated and anonymous users.
+
+**Parameters:**
+- `Client` (*Client) - Django session client (required)
+- `SessionKey` (string) - Context key for storing session (default: "django_session")
+- `LoginRedirectURL` - Not used (no redirects)
+- `OnError` - Not used (no error handling)
+
+**Behavior:**
+- Validates session if present
+- Stores `RawSession` in Gin context only if session is valid
+- **Does NOT redirect** or abort on missing/invalid session
+- Request continues regardless of authentication status
+- Use `c.Get(SessionKey)` to check if user is authenticated
 
 ## Error Types
 
